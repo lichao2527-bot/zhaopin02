@@ -6,61 +6,70 @@ import cloudbase from '@cloudbase/js-sdk';
 let app: any;
 let dbInstance: any;
 let authInstance: any;
+let isInitialized = false;
+let initPromise: Promise<void> | null = null;
 
 // 读取环境变量
 const CLOUDBASE_ENV_ID = (import.meta as any).env.VITE_CLOUDBASE_ENV_ID;
-
-try {
-  app = (cloudbase as any).init({
-    env: CLOUDBASE_ENV_ID,
-  });
-
-  // 获取 auth 实例
-  authInstance = app.auth({
-    persistence: 'local' // 本地持久化登录状态
-  });
-
-  dbInstance = app.database();
-
-  console.log('CloudBase initialized successfully');
-  console.log('CloudBase env:', CLOUDBASE_ENV_ID);
-  console.log('CloudBase db instance:', dbInstance);
-} catch (error) {
-  console.error('CloudBase initialization failed:', error);
-  throw error;
-}
 
 // Collection References
 const JOBS_COL = "jobs";
 const PERSONAS_COL = "personas";
 const CANDIDATES_COL = "candidates";
 
-// 匿名登录函数
-export const loginAnonymously = async () => {
-  try {
-    if (!authInstance) {
-      console.warn('Auth instance not initialized');
-      return null;
-    }
-
-    // 检查是否已登录
-    const loginState = await authInstance.getLoginState();
-    console.log('Current login state:', loginState);
-
-    if (loginState) {
-      console.log('Already logged in');
-      return loginState;
-    }
-
-    // 进行匿名登录
-    console.log('Performing anonymous login...');
-    const authResult = await authInstance.signInAnonymously();
-    console.log('Anonymous login success:', authResult);
-    return authResult;
-  } catch (error) {
-    console.error('Anonymous login failed:', error);
-    throw error;
+// 初始化并登录 CloudBase
+const initCloudBase = async () => {
+  if (isInitialized) {
+    return;
   }
+
+  if (initPromise) {
+    return initPromise;
+  }
+
+  initPromise = (async () => {
+    try {
+      console.log('Initializing CloudBase with env:', CLOUDBASE_ENV_ID);
+
+      app = (cloudbase as any).init({
+        env: CLOUDBASE_ENV_ID,
+      });
+
+      // 获取 auth 实例
+      authInstance = app.auth({
+        persistence: 'local'
+      });
+
+      // 检查是否已登录
+      const loginState = await authInstance.getLoginState();
+      console.log('CloudBase login state:', loginState);
+
+      if (!loginState) {
+        // 进行匿名登录
+        console.log('Performing anonymous login...');
+        const authResult = await authInstance.signInAnonymously();
+        console.log('Anonymous login success:', authResult);
+      }
+
+      // 获取数据库实例
+      dbInstance = app.database();
+
+      isInitialized = true;
+      console.log('CloudBase initialized successfully');
+    } catch (error) {
+      console.error('CloudBase initialization failed:', error);
+      initPromise = null;
+      throw error;
+    }
+  })();
+
+  return initPromise;
+};
+
+// 匿名登录函数（保持向后兼容）
+export const loginAnonymously = async () => {
+  await initCloudBase();
+  return authInstance ? await authInstance.getLoginState() : null;
 };
 
 export const db = {
@@ -68,6 +77,7 @@ export const db = {
   testConnection: async () => {
     try {
       console.log('Testing CloudBase connection...');
+      await initCloudBase();
 
       // 尝试获取 jobs 集合
       const testResult = await dbInstance.collection(JOBS_COL).get();
@@ -83,6 +93,8 @@ export const db = {
   // 1. 获取所有数据
   fetchAllData: async () => {
     try {
+      await initCloudBase();
+
       // Fetch Jobs
       const jobsRes = await dbInstance.collection(JOBS_COL).get();
       const jobs = jobsRes.data || [];
@@ -110,6 +122,7 @@ export const db = {
   // 2. 岗位 & 画像相关
   createJobAndPersona: async (job: Job, persona: Persona) => {
     try {
+      await initCloudBase();
       console.log('Creating job and persona:', { job, persona });
 
       // Create Persona Document
@@ -140,6 +153,7 @@ export const db = {
 
   updateJob: async (job: Job) => {
     try {
+      await initCloudBase();
       await dbInstance.collection(JOBS_COL).doc(job.id).update(job);
     } catch (error) {
       console.error("Error updating job:", error);
@@ -149,6 +163,7 @@ export const db = {
 
   updatePersona: async (persona: Persona) => {
     try {
+      await initCloudBase();
       await dbInstance.collection(PERSONAS_COL).doc(persona.id).update(persona);
     } catch (error) {
       console.error("Error updating persona:", error);
@@ -158,6 +173,7 @@ export const db = {
 
   deleteJob: async (jobId: string) => {
     try {
+      await initCloudBase();
       // 1. Get Job to find Persona ID
       const jobRes = await dbInstance.collection(JOBS_COL).doc(jobId).get();
       const jobData = jobRes.data[0] as Job;
@@ -190,6 +206,7 @@ export const db = {
   // 3. 候选人相关
   createCandidate: async (candidate: Candidate) => {
     try {
+      await initCloudBase();
       await dbInstance.collection(CANDIDATES_COL).doc(candidate.id).set(candidate);
     } catch (error) {
       console.error("Error creating candidate:", error);
@@ -199,6 +216,7 @@ export const db = {
 
   updateCandidate: async (candidate: Candidate) => {
     try {
+      await initCloudBase();
       await dbInstance.collection(CANDIDATES_COL).doc(candidate.id).update(candidate);
     } catch (error) {
       console.error("Error updating candidate:", error);
@@ -208,6 +226,7 @@ export const db = {
 
   deleteCandidate: async (candidateId: string) => {
     try {
+      await initCloudBase();
       await dbInstance.collection(CANDIDATES_COL).doc(candidateId).remove();
     } catch (error) {
       console.error("Error deleting candidate:", error);
