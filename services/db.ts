@@ -9,14 +9,10 @@ let authInstance: any;
 
 // 读取环境变量
 const CLOUDBASE_ENV_ID = (import.meta as any).env.VITE_CLOUDBASE_ENV_ID;
-const CLOUDBASE_REGION = (import.meta as any).env.VITE_CLOUDBASE_REGION;
-const CLOUDBASE_ACCESS_KEY = (import.meta as any).env.VITE_CLOUDBASE_ACCESS_KEY;
 
 try {
   app = (cloudbase as any).init({
     env: CLOUDBASE_ENV_ID,
-    region: CLOUDBASE_REGION,
-    accessKey: CLOUDBASE_ACCESS_KEY,
   });
 
   // 获取 auth 实例并进行匿名登录
