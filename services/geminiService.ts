@@ -1,9 +1,12 @@
 
 import OpenAI from 'openai';
 
+const apiKey = (import.meta as any).env.VITE_API_KEY;
+const baseURL = (import.meta as any).env.VITE_GLM_API || 'https://openrouter.ai/api/v1';
+
 const client = new OpenAI({
-  baseURL: process.env.GLM_API || 'https://openrouter.ai/api/v1',
-  apiKey: process.env.API_KEY,
+  baseURL: baseURL,
+  apiKey: apiKey,
   dangerouslyAllowBrowser: true, // 仅用于开发环境，生产环境请使用后端代理
 });
 
