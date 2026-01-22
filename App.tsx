@@ -20,7 +20,7 @@ import CandidateManagement from './components/CandidateManagement';
 import InterviewCalendar from './components/InterviewCalendar';
 import InterviewRoundPage from './components/InterviewRoundPage';
 import { Job, Candidate, Persona } from './types';
-import { db, loginAnonymously } from './services/db'; // Import CloudBase DB Service
+import { db } from './services/db';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'jobs' | 'candidates' | 'calendar' | 'round1' | 'round2' | 'round3'>('dashboard');
@@ -37,17 +37,13 @@ const App: React.FC = () => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // 先进行匿名登录
-        console.log('Attempting CloudBase login...');
-        await loginAnonymously();
-
-        // 测试 CloudBase 连接
+        // 测试 Supabase 连接
         const connectionTest = await db.testConnection();
-        console.log('CloudBase connection test:', connectionTest);
+        console.log('Supabase connection test:', connectionTest);
 
         if (!connectionTest.success) {
-          console.error('CloudBase connection failed:', connectionTest.error);
-          alert("CloudBase 连接测试失败，可能无法正常保存数据");
+          console.error('Supabase connection failed:', connectionTest.error);
+          alert("Supabase 连接测试失败，可能无法正常保存数据");
         }
 
         const data = await db.fetchAllData();
@@ -55,8 +51,8 @@ const App: React.FC = () => {
         setPersonas(data.personas || []);
         setCandidates(data.candidates || []);
       } catch (error) {
-        console.error("Failed to load initial data from CloudBase:", error);
-        alert("连接 CloudBase 云端数据库失败，请检查网络");
+        console.error("Failed to load initial data from Supabase:", error);
+        alert("连接 Supabase 数据库失败，请检查网络");
       } finally {
         setIsLoading(false);
       }

@@ -1,236 +1,269 @@
-
 import { Job, Persona, Candidate } from '../types';
-import cloudbase from '@cloudbase/js-sdk';
+import { createClient } from '@supabase/supabase-js';
 
-// --- CloudBase Configuration ---
-let app: any;
-let dbInstance: any;
-let authInstance: any;
-let isInitialized = false;
-let initPromise: Promise<void> | null = null;
+const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
+const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
 
-// 读取环境变量
-const CLOUDBASE_ENV_ID = (import.meta as any).env.VITE_CLOUDBASE_ENV_ID;
-
-// Collection References
-const JOBS_COL = "jobs";
-const PERSONAS_COL = "personas";
-const CANDIDATES_COL = "candidates";
-
-// 初始化并登录 CloudBase
-const initCloudBase = async () => {
-  if (isInitialized) {
-    return;
-  }
-
-  if (initPromise) {
-    return initPromise;
-  }
-
-  initPromise = (async () => {
-    try {
-      console.log('Initializing CloudBase with env:', CLOUDBASE_ENV_ID);
-
-      app = (cloudbase as any).init({
-        env: CLOUDBASE_ENV_ID,
-      });
-
-      // 获取 auth 实例
-      authInstance = app.auth({
-        persistence: 'local'
-      });
-
-      // 检查是否已登录
-      const loginState = await authInstance.getLoginState();
-      console.log('CloudBase login state:', loginState);
-
-      if (!loginState) {
-        // 进行匿名登录
-        console.log('Performing anonymous login...');
-        const authResult = await authInstance.signInAnonymously();
-        console.log('Anonymous login success:', authResult);
-      }
-
-      // 获取数据库实例
-      dbInstance = app.database();
-
-      isInitialized = true;
-      console.log('CloudBase initialized successfully');
-    } catch (error) {
-      console.error('CloudBase initialization failed:', error);
-      initPromise = null;
-      throw error;
-    }
-  })();
-
-  return initPromise;
-};
-
-// 匿名登录函数（保持向后兼容）
-export const loginAnonymously = async () => {
-  await initCloudBase();
-  return authInstance ? await authInstance.getLoginState() : null;
-};
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export const db = {
-  // 测试函数：验证 CloudBase 连接
   testConnection: async () => {
     try {
-      console.log('Testing CloudBase connection...');
-      await initCloudBase();
+      console.log('Testing Supabase connection...');
+      const { data, error } = await supabase.from('jobs').select('count');
 
-      // 尝试获取 jobs 集合
-      const testResult = await dbInstance.collection(JOBS_COL).get();
-      console.log('CloudBase connection test result:', testResult);
+      if (error) {
+        console.error('Supabase connection test failed:', error);
+        return { success: false, error };
+      }
 
-      return { success: true, data: testResult };
+      console.log('Supabase connection test successful');
+      return { success: true, data };
     } catch (error) {
-      console.error('CloudBase connection test failed:', error);
+      console.error('Supabase connection test failed:', error);
       return { success: false, error };
     }
   },
 
-  // 1. 获取所有数据
   fetchAllData: async () => {
     try {
-      await initCloudBase();
+      const { data: jobs, error: jobsError } = await supabase
+        .from('jobs')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-      // Fetch Jobs
-      const jobsRes = await dbInstance.collection(JOBS_COL).get();
-      const jobs = jobsRes.data || [];
+      if (jobsError) throw jobsError;
 
-      // Fetch Personas
-      const personasRes = await dbInstance.collection(PERSONAS_COL).get();
-      const personas = (personasRes.data || []).map((p: Persona) => ({
+      const { data: personas, error: personasError } = await supabase
+        .from('personas')
+        .select('*');
+
+      if (personasError) throw personasError;
+
+      const { data: candidates, error: candidatesError } = await supabase
+        .from('candidates')
+        .select('*')
+        .order('applied_at', { ascending: false });
+
+      if (candidatesError) throw candidatesError;
+
+      const processedPersonas = (personas || []).map((p: any) => ({
         ...p,
-        // 确保 core_tags 始终是字符串类型
-        core_tags: Array.isArray(p.core_tags) ? p.core_tags.join(',') : p.core_tags || ''
+        core_tags: Array.isArray(p.core_tags) ? p.core_tags.join(',') : p.core_tags || '',
+        requirements: p.requirements || [],
+        skills: p.skills || []
       }));
 
-      // Fetch Candidates
-      const candidatesRes = await dbInstance.collection(CANDIDATES_COL).get();
-      const candidates = candidatesRes.data || [];
+      console.log('Supabase data loaded:', {
+        jobs: jobs?.length || 0,
+        personas: personas?.length || 0,
+        candidates: candidates?.length || 0
+      });
 
-      console.log('CloudBase data loaded:', { jobs: jobs.length, personas: personas.length, candidates: candidates.length });
-      return { jobs, personas, candidates };
+      return {
+        jobs: jobs || [],
+        personas: processedPersonas,
+        candidates: candidates || []
+      };
     } catch (error) {
-      console.error("Error fetching data from CloudBase:", error);
+      console.error('Error fetching data from Supabase:', error);
       throw error;
     }
   },
 
-  // 2. 岗位 & 画像相关
   createJobAndPersona: async (job: Job, persona: Persona) => {
     try {
-      await initCloudBase();
       console.log('Creating job and persona:', { job, persona });
 
-      // Create Persona Document
-      const personaResult = await dbInstance.collection(PERSONAS_COL).doc(persona.id).set(persona);
-      console.log('Persona created:', personaResult);
+      const personaData = {
+        id: persona.id,
+        title: persona.title,
+        description: persona.description,
+        responsibilities: persona.responsibilities,
+        knowledge: persona.knowledge,
+        skills_detail: persona.skills_detail,
+        literacy: persona.literacy,
+        experience: persona.experience,
+        warning_traits: persona.warning_traits,
+        core_tags: persona.core_tags,
+        requirements: persona.requirements || [],
+        skills: persona.skills || [],
+        ai_suggestions: persona.aiSuggestions || ''
+      };
 
-      // 检查是否成功
-      if (personaResult.code) {
-        throw new Error(`Persona creation failed: ${personaResult.message}`);
+      const { error: personaError } = await supabase
+        .from('personas')
+        .insert([personaData]);
+
+      if (personaError) {
+        console.error('Persona creation failed:', personaError);
+        throw personaError;
       }
 
-      // Create Job Document
-      const jobResult = await dbInstance.collection(JOBS_COL).doc(job.id).set(job);
-      console.log('Job created:', jobResult);
+      const jobData = {
+        id: job.id,
+        title: job.title,
+        location: job.location,
+        salary: job.salary,
+        persona_id: job.personaId,
+        status: job.status,
+        created_at: job.createdAt
+      };
 
-      // 检查是否成功
-      if (jobResult.code) {
-        throw new Error(`Job creation failed: ${jobResult.message}`);
+      const { error: jobError } = await supabase
+        .from('jobs')
+        .insert([jobData]);
+
+      if (jobError) {
+        console.error('Job creation failed:', jobError);
+        throw jobError;
       }
 
       console.log('Successfully created job and persona');
-    } catch (error: any) {
-      console.error("Error creating job/persona:", error);
-      console.error("Error details:", JSON.stringify(error, null, 2));
+    } catch (error) {
+      console.error('Error creating job/persona:', error);
       throw error;
     }
   },
 
   updateJob: async (job: Job) => {
     try {
-      await initCloudBase();
-      await dbInstance.collection(JOBS_COL).doc(job.id).update(job);
+      const { error } = await supabase
+        .from('jobs')
+        .update({
+          title: job.title,
+          location: job.location,
+          salary: job.salary,
+          status: job.status
+        })
+        .eq('id', job.id);
+
+      if (error) throw error;
     } catch (error) {
-      console.error("Error updating job:", error);
+      console.error('Error updating job:', error);
       throw error;
     }
   },
 
   updatePersona: async (persona: Persona) => {
     try {
-      await initCloudBase();
-      await dbInstance.collection(PERSONAS_COL).doc(persona.id).update(persona);
+      const { error } = await supabase
+        .from('personas')
+        .update({
+          title: persona.title,
+          description: persona.description,
+          responsibilities: persona.responsibilities,
+          knowledge: persona.knowledge,
+          skills_detail: persona.skills_detail,
+          literacy: persona.literacy,
+          experience: persona.experience,
+          warning_traits: persona.warning_traits,
+          core_tags: persona.core_tags,
+          requirements: persona.requirements || [],
+          skills: persona.skills || [],
+          ai_suggestions: persona.aiSuggestions || ''
+        })
+        .eq('id', persona.id);
+
+      if (error) throw error;
     } catch (error) {
-      console.error("Error updating persona:", error);
+      console.error('Error updating persona:', error);
       throw error;
     }
   },
 
   deleteJob: async (jobId: string) => {
     try {
-      await initCloudBase();
-      // 1. Get Job to find Persona ID
-      const jobRes = await dbInstance.collection(JOBS_COL).doc(jobId).get();
-      const jobData = jobRes.data[0] as Job;
-      
-      if (jobData) {
-        // 2. Delete associated Candidates
-        const candidatesRes = await dbInstance.collection(CANDIDATES_COL).where({
-          jobId: dbInstance.command.eq(jobId)
-        }).get();
-        
-        const deletePromises = candidatesRes.data.map((candidate: any) =>
-          dbInstance.collection(CANDIDATES_COL).doc(candidate.id).remove()
-        );
-        await Promise.all(deletePromises);
+      const { data: jobData } = await supabase
+        .from('jobs')
+        .select('persona_id')
+        .eq('id', jobId)
+        .maybeSingle();
 
-        // 3. Delete Job
-        await dbInstance.collection(JOBS_COL).doc(jobId).remove();
+      await supabase
+        .from('candidates')
+        .delete()
+        .eq('job_id', jobId);
 
-        // 4. Delete Persona
-        if (jobData.personaId) {
-          await dbInstance.collection(PERSONAS_COL).doc(jobData.personaId).remove();
-        }
+      await supabase
+        .from('jobs')
+        .delete()
+        .eq('id', jobId);
+
+      if (jobData?.persona_id) {
+        await supabase
+          .from('personas')
+          .delete()
+          .eq('id', jobData.persona_id);
       }
     } catch (error) {
-      console.error("Error deleting job:", error);
+      console.error('Error deleting job:', error);
       throw error;
     }
   },
 
-  // 3. 候选人相关
   createCandidate: async (candidate: Candidate) => {
     try {
-      await initCloudBase();
-      await dbInstance.collection(CANDIDATES_COL).doc(candidate.id).set(candidate);
+      const candidateData = {
+        id: candidate.id,
+        name: candidate.name,
+        job_id: candidate.jobId,
+        resume_url: candidate.resumeUrl,
+        full_resume_text: candidate.fullResumeText || '',
+        basic_info: candidate.basicInfo || {},
+        status: candidate.status,
+        applied_at: candidate.appliedAt,
+        interviews: candidate.interviews || []
+      };
+
+      const { error } = await supabase
+        .from('candidates')
+        .insert([candidateData]);
+
+      if (error) throw error;
     } catch (error) {
-      console.error("Error creating candidate:", error);
+      console.error('Error creating candidate:', error);
       throw error;
     }
   },
 
   updateCandidate: async (candidate: Candidate) => {
     try {
-      await initCloudBase();
-      await dbInstance.collection(CANDIDATES_COL).doc(candidate.id).update(candidate);
+      const { error } = await supabase
+        .from('candidates')
+        .update({
+          name: candidate.name,
+          resume_url: candidate.resumeUrl,
+          full_resume_text: candidate.fullResumeText || '',
+          basic_info: candidate.basicInfo || {},
+          status: candidate.status,
+          interviews: candidate.interviews || []
+        })
+        .eq('id', candidate.id);
+
+      if (error) throw error;
     } catch (error) {
-      console.error("Error updating candidate:", error);
+      console.error('Error updating candidate:', error);
       throw error;
     }
   },
 
   deleteCandidate: async (candidateId: string) => {
     try {
-      await initCloudBase();
-      await dbInstance.collection(CANDIDATES_COL).doc(candidateId).remove();
+      const { error } = await supabase
+        .from('candidates')
+        .delete()
+        .eq('id', candidateId);
+
+      if (error) throw error;
     } catch (error) {
-      console.error("Error deleting candidate:", error);
+      console.error('Error deleting candidate:', error);
       throw error;
     }
   }
+};
+
+export const loginAnonymously = async () => {
+  console.log('Using Supabase (no login required for anonymous access)');
+  return null;
 };
