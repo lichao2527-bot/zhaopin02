@@ -15,22 +15,10 @@ try {
     env: CLOUDBASE_ENV_ID,
   });
 
-  // 获取 auth 实例并进行匿名登录
+  // 获取 auth 实例
   authInstance = app.auth({
     persistence: 'local' // 本地持久化登录状态
   });
-
-  // 检查是否已登录，未登录则进行匿名登录
-  const loginState = await authInstance.getLoginState();
-  console.log('CloudBase login state:', loginState);
-
-  if (loginState) {
-    console.log('Already logged in');
-  } else {
-    console.log('Performing anonymous login...');
-    const authResult = await authInstance.anonymousAuthProvider().signIn();
-    console.log('CloudBase anonymous login success:', authResult);
-  }
 
   dbInstance = app.database();
 
@@ -66,7 +54,7 @@ export const loginAnonymously = async () => {
 
     // 进行匿名登录
     console.log('Performing anonymous login...');
-    const authResult = await authInstance.anonymousAuthProvider().signIn();
+    const authResult = await authInstance.signInAnonymously();
     console.log('Anonymous login success:', authResult);
     return authResult;
   } catch (error) {
