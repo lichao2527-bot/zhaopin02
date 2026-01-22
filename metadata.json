@@ -1,0 +1,8 @@
+{
+  "name": "招聘系统 李超5.2（有数据库，无ai）word 导出格式修复",
+  "description": "一个集成人工智能的现代化招聘管理系统，具备岗位管理、人才画像AI优化、简历解析、多轮面试追踪及数据分析面板。",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
